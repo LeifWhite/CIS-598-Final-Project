@@ -1,3 +1,5 @@
+# Controls how the game functions
+
 import chess
 import chess.pgn
 import random
