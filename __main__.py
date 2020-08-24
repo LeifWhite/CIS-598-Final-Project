@@ -1,3 +1,5 @@
+# Gecko, my chess engine, for my CIS-598 class
+
 import chess.svg
 import chess.pgn
 #import chess
