@@ -1,3 +1,5 @@
+# Controls how the program thinks and plays
+
 import chess
 import chess.polyglot
 import copy
