@@ -1,7 +1,7 @@
 # CIS-598-Final-Project
 CIS-598 Final Project
 
-This program is a python based standard chess engine made by Leif White for my senior design class CIS-598.
+This program is a python based standard chess engine made by Leif White for my senior design class CIS-598.  For this program to work optimally, you should also download the Syzygy 5 piece tablebase and the ProDeo292 opening database.
 
 Current time log: Approximately 90 hours of prior work
 
