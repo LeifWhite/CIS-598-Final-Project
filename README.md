@@ -32,5 +32,3 @@ Plans for future improvements:
 6. Give notion of move percentage completion
 
 7. Program concept of time controls and adaptability to less time
-
-8. If mate is found, don’t look further on any other move order
