@@ -19,7 +19,7 @@ b = brain.brain(bbb)
 b.see(b.board, chess.D5, chess.WHITE)"""
 result = False
 FEN = chess.STARTING_FEN
-#FEN = "4kbn1/8/8/8/8/8/8/4K3 w - - 0 1"
+#FEN = "R7/5kpp/2p1p3/8/1nPPK3/QPb5/5PPP/7R w - - 0 1"
 g.board = chess.Board(fen=FEN)
 g.pgn.setup(g.board)
 white_player = "bot"

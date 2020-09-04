@@ -1,4 +1,3 @@
-# OLD FILE, cython_brain now used for increased compiler speed
 # Controls how the program thinks and plays
 
 import chess

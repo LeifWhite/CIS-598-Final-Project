@@ -3,8 +3,8 @@
 import chess
 import chess.pgn
 import random
-import brain
-
+import pyximport; pyximport.install()
+import cython_brain
 
 class game:
 
@@ -46,8 +46,9 @@ class game:
                 move_inputted = self.legal_moves[random.randint(0, len(self.legal_moves)-1)]
 
             elif mover == "bot":
-                b = brain.brain(self.board)
-                t = 7000
+
+                b = cython_brain.brain(self.board)
+                t = 15000
 
                 move_inputted = b.findMove(time=t)
             self.board.push(move_inputted)
