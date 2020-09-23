@@ -27,7 +27,7 @@ Plans for future improvements:
 
 4. Create bot account on online chess website to estimate Elo rating
 
-5. Have engine query more opening books
+5. DONE: Have engine query more opening books
 
 6. Give notion of move percentage completion
 
