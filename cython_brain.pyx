@@ -41,7 +41,7 @@ class brain:
         self.current_depth = 0
         self.tb = chess.syzygy.open_tablebase("./OmegaFifteen/3-4-5piecesSyzygy/3-4-5")
         # Search Parameters
-        self.MIN_DEPTH_SEARCH = 2
+        self.MIN_DEPTH_SEARCH = 1
         self.MAX_DEPTH_SEARCH = 6
         self.MAX_INITIAL_SEARCH = 4
         self.ATTACKS_HIGHER_PIECE_PLIES = 1
@@ -449,7 +449,6 @@ class brain:
             return self.staticEvaluation(self.board)
         return alpha
     # Third level of search, evaluates captures and some checks
-    # TODO Fix captures
     def quiesce(self, alpha, beta, qdepth=0, checked=False):
         #if self.checkDrawClaimable(self.board) or self.board.is_game_over():
         #  return self.staticEvaluation(self.board)
@@ -601,9 +600,9 @@ class brain:
         while sum_total < self.time:
             sum_used = sum_total
             if counter % 2 == 0:
-                sum_total *= i1 * (math.sqrt(m1) / 4)
+                sum_total *= i1 * (math.pow(m1, 0.8) / 4.5)
             else:
-                sum_total *= i2 * (math.sqrt(m2) / 4)
+                sum_total *= i2 * (math.pow(m2, 0.8) / 4.5)
             counter += 1
         counter -= 1
         return counter, sum_used
@@ -1300,5 +1299,3 @@ class brain:
         start_wdl = self.tb.probe_wdl(self.board)
 
         return start_wdl
-
-
