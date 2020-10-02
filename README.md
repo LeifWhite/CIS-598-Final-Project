@@ -21,7 +21,7 @@ Plans for future improvements:
 
     c. Create analysis board tool
 
-2. Modify programming language to allow faster processing
+2. DONE: Modify programming language to allow faster processing
 
 3. Improve endgame evaluation
 
