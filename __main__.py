@@ -1,3 +1,4 @@
+
 # Gecko, my chess engine, for my CIS-598 class
 
 import chess.svg
@@ -5,8 +6,55 @@ import chess.pgn
 #import chess
 import game
 import os
-from datetime import date
+#import testf
+import pyximport; pyximport.install()
+#import ctestf
 
+from datetime import date
+"""import datetime
+tpy = testf.testf(30000)
+tpyx = ctestf.ctestf(30000)
+sum = 0
+count = 0
+while count<100:
+    start = datetime.datetime.now()
+    tpy.slow_add()
+    finish = datetime.datetime.now()
+    td = finish-start
+    sum+=td.total_seconds()
+    count+=1
+print("Python Average: "+str(sum/count))
+sum = 0
+count =0
+while count<100:
+    start = datetime.datetime.now()
+    tpyx.slow_add()
+    finish = datetime.datetime.now()
+    td = finish - start
+    sum += td.total_seconds()
+    count+=1
+print("Cython Average 1: "+str(sum/count))
+sum = 0
+count =0
+while count<100:
+    start = datetime.datetime.now()
+    tpyx.slow_add2()
+    finish = datetime.datetime.now()
+    td = finish - start
+    sum += td.total_seconds()
+    count+=1
+print("Cython Average 2: "+str(sum/count))
+sum = 0
+count =0
+while count<100:
+    start = datetime.datetime.now()
+    tpyx.slow_add3()
+    finish = datetime.datetime.now()
+    td = finish - start
+    sum += td.total_seconds()
+    count+=1
+print("Cython Average 3: "+str(sum/count))
+"""
 #os.system('ls')
 #print( open("./OmegaFifteen/3-4-5piecesSyzygy/3-4-5", "r").readlines() )
 #import brain
@@ -16,10 +64,12 @@ d1 = today.strftime("%Y.%m.%d")
 g = game.game()
 """bbb = chess.Board(fen="7k/3rn3/8/3p4/2Q5/4N3/8/7K w - - 0 1")
 b = brain.brain(bbb)
-b.see(b.board, chess.D5, chess.WHITE)"""
+b.see(b.board, chess.D5, chess.WHITE)
+"""
+
 result = False
 FEN = chess.STARTING_FEN
-#FEN = "R7/5kpp/2p1p3/8/1nPPK3/QPb5/5PPP/7R w - - 0 1"
+#FEN = "4r2r/p2n1kp1/1p1q3p/3R4/2pP4/2N1QP2/PP3P1P/R5K1 b - - 0 23"
 g.board = chess.Board(fen=FEN)
 g.pgn.setup(g.board)
 white_player = "bot"
@@ -44,8 +94,12 @@ while not result:
     f.close()
 if white_player == "bot":
     white_player = "Gecko"
+elif white_player == "mat":
+    white_player = "Gecko (Material Only)"
 if black_player == "bot":
     black_player = "Gecko"
+elif black_player == "mat":
+    black_player = "Gecko (Material Only)"
 g.pgn.headers = chess.pgn.Headers(Event='Training Match',
                                   Site='Local',
                                   Date=d1,
@@ -57,6 +111,7 @@ g.pgn.headers = chess.pgn.Headers(Event='Training Match',
 print(result)
 print("\n\n")
 print(g.pgn)
+
 """
  boardsvg = chess.svg.board(board=board)
         f = open("board.SVG", "w")

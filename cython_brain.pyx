@@ -1,11 +1,13 @@
+#!python
+#cython: language_level=3
 # Controls how the program thinks and plays
-
 import chess
 import chess.polyglot
 import copy
 import random
 import math
 import chess.syzygy
+import datetime
 #import chess.gaviota
 # Many ideas for how to improve algorithm efficiency and position evaluation taken from:
 # https://www.chessprogramming.org/ and Alan Turing's "Turbochamp" program
@@ -14,6 +16,23 @@ class brain:
     # Initializes constant variables for brain class to assess positional strength
     def __init__(self, board):
         self.time = 0
+        self.generateKingExposureTime = 0
+        self.getTotalMaterialTime = 0
+        self.isBlockedTime=0
+        self.isPassedTime=0
+        self.positionEvaluationTime=0
+        self.evalInteriorLoopTime=0
+        self.pawnEvalTime =0
+        self.checkmateOrDrawTime=0
+        self.unionOperationTime=0
+        self.setupTime =0
+        self.middleTime=0
+        self.endTime = 0
+        self.endSplit1 = 0
+        self.innerInnerLoopTime=0
+
+        self.t_bonus=0
+
         self.board = copy.deepcopy(board)
         self.test = True
         self.game_phase = "opening"
@@ -25,7 +44,7 @@ class brain:
         self.MIN_DEPTH_SEARCH = 2
         self.MAX_DEPTH_SEARCH = 6
         self.MAX_INITIAL_SEARCH = 4
-        self.ATTACKS_HIGHER_PIECE_PLIES = 2
+        self.ATTACKS_HIGHER_PIECE_PLIES = 1
         self.CHECK_PLIES = 3
         # Evaluation Factors
         self.PIECE_VALUE_MULTIPLIER = 5
@@ -144,7 +163,11 @@ class brain:
             -30,-10, 20, 30, 30, 20,-10,-30,
             -30,-30,  0,  0,  0,  0,-30,-30,
             -50,-30,-30,-30,-30,-30,-30,-50]
+        self.HIGHER_PIECES = {
+            chess.KING: [],
+            chess.QUEEN: [],
 
+        }
         self.table_reference = {
             chess.KING: self.KING_TABLE,
 
@@ -157,6 +180,7 @@ class brain:
         }
      # Only method interacted with by game class.  Returns best move.
     def findMove(self, time):
+        start = datetime.datetime.now()
         self.positionEvaluation(self.board)
         # bbb = self.board.piece_map()
         """try:
@@ -174,13 +198,32 @@ class brain:
         print(m*val)
         print(best)
         print("ITERATIONS: " + str(self.qvaluations))
+        if self.qvaluations>0:
+            print("AVERAGE T BONUS: "+str(self.t_bonus/self.qvaluations))
         print("\n")
         self.tb.close()
+        end = datetime.datetime.now()
+        print("Generate King Exposure Time: "+str(self.generateKingExposureTime))
+        print("Get Total Material Time: "+str(self.getTotalMaterialTime))
+        print("Is Blocked Time: "+str(self.isBlockedTime))
+        print("Is Passed Time: "+str(self.isPassedTime))
+        print("Position Evaluation Time: "+str(self.positionEvaluationTime))
+        print("     Checkmate or Draw Time: "+str(self.checkmateOrDrawTime))
+        print("     Union Operation Time: "+str(self.unionOperationTime))
+        print("     Setup Time: "+str(self.setupTime))
+        print("     Interior Loop Time: "+str(self.evalInteriorLoopTime))
+        print("         Interior Interior Loop Time: "+str(self.innerInnerLoopTime))
+        print("     Middle Time: "+str(self.middleTime))
+        print("     Pawn Eval Time: "+str(self.pawnEvalTime))
+        print("     End Time 1: "+str(self.endSplit1))
+        print("     End Time 2: "+str(self.endTime))
+        print("Total Time: "+str(end-start))
         return best
     # TODO: Establish a percentage of search complete of move
     # First level of search
     def selectMove(self):
         # Tries checking tablebase and book first
+        #choice = chess.polyglot.MemoryMappedReader("./OmegaFifteen/ProDeo292/books/ProDeo.bin").weighted_choice(self.board)
         try:
             #raise ValueError()
             piece_count = chess.popcount(self.board.occupied_co[0]) + chess.popcount(self.board.occupied_co[1])
@@ -188,7 +231,7 @@ class brain:
                 return self.endgameTablebase()
 
             choice = chess.polyglot.MemoryMappedReader(
-                "./OmegaFifteen/ProDeo292/books/elo2500.bin"
+                "./OmegaFifteen/ProDeo292/books/ProDeo.bin"
                 ).weighted_choice(
                 self.board)
             weight = choice.weight
@@ -279,7 +322,7 @@ class brain:
         best_score = -9999
         # If max depth exceeded, keep looking, but only at checks and captures
         if depth >= max_depth-1:
-            return self.checkSearch(alpha, beta)
+            return self.attacksHigherPieceSearch(alpha, beta)
         if len(self.i) == depth:
             self.i.append(0)
         has_moves = False
@@ -314,7 +357,53 @@ class brain:
         if not has_moves:
             return self.staticEvaluation(self.board)
         return alpha
+    def attacksHigherPieceSearch(self, alpha, beta, qdepth=0):
+        piece_count = chess.popcount(self.board.occupied_co[0]) + chess.popcount(self.board.occupied_co[1])
+        if piece_count <= 5:
+            score = self.staticEvaluation(self.board)
+            self.in_tablebase = False
+            return score
+        best_score = -9999
+        # If max depth exceeded, keep looking, but only at checks and captures
+        if qdepth >= self.ATTACKS_HIGHER_PIECE_PLIES:
+            return self.checkSearch(alpha, beta)
+        has_moves = False
+        # This is important to check if the game could be over here,
+        # so that it doesn't just return the game ends founds in the quiesce function
+        if self.checkDrawClaimable(self.board) or self.board.is_game_over():
+            return self.staticEvaluation(self.board)
+        is_check = self.board.is_check()
+        # Iterates through legal moves
+        for i in self.board.legal_moves:
 
+            if not has_moves:
+                has_moves = True
+            # Same thing as before, pushes move, recursively scans, uses negamax
+            # Negamax implementation pretty much uses alpha-beta operating under the principle that what is good
+            # for me is bad for my opponent and vise versa
+            self.current_depth += 1
+            if self.attacksHigherPiece(i):
+                self.board.push(i)
+                score = -self.attacksHigherPieceSearch(alpha=-beta, beta=-alpha, qdepth=qdepth + 1)
+            elif not is_check and not self.board.gives_check(i):
+                self.board.push(i)
+                score = -self.quiesce(alpha=-beta, beta=-alpha, qdepth=qdepth + 1)
+            else:
+                self.board.push(i)
+                score = -self.checkSearch(alpha=-beta, beta=-alpha, qdepth=qdepth + 1)
+            self.board.pop()
+            self.current_depth -= 1
+            # Alpha-beta pruning
+            if score >= beta:
+                return beta
+            if score > best_score:
+                best_score = score
+                if score > alpha:
+                    alpha = score
+        # I don't think this is necessary... just too scared to remove it.
+        if not has_moves:
+            return self.staticEvaluation(self.board)
+        return alpha
     def checkSearch(self, alpha, beta, qdepth=0):
         piece_count = chess.popcount(self.board.occupied_co[0]) + chess.popcount(self.board.occupied_co[1])
         if piece_count <= 5:
@@ -535,6 +624,7 @@ class brain:
     #  Unstoppable passed pawn
     # Evaluation function, assesses positional strength based on one position without calculating any further
     def positionEvaluation(self, t_board):
+        start = datetime.datetime.now()
         # Checkmate is the best.
         if t_board.is_checkmate():
             # Faster checkmates are better
@@ -548,8 +638,9 @@ class brain:
                 or t_board.is_stalemate() \
                 or t_board.is_insufficient_material():
             return 0
-
-        evaluation = 0
+        mid1 = datetime.datetime.now()
+        self.checkmateOrDrawTime += (mid1-start).total_seconds()
+        cdef float evaluation = 0
         piece_map = t_board.piece_map()
         pieces = {
             chess.WHITE: {
@@ -581,6 +672,30 @@ class brain:
             chess.Piece.from_symbol('K'): chess.lsb(pieces[chess.WHITE][chess.KING].mask),
             chess.Piece.from_symbol('k'): chess.lsb(pieces[chess.BLACK][chess.KING].mask)
         }
+        around_wk = chess.SquareSet()
+        around_bk = chess.SquareSet()
+        king_test = k_positions[chess.Piece.from_symbol('K')]
+        rank_i = max(chess.square_rank(king_test)-1, 0)
+        for i in range(2):
+            if i == 1:
+                king_test = k_positions[chess.Piece.from_symbol('k')]
+                rank_i = max(chess.square_rank(king_test)-1, 0)
+            while rank_i <= min(chess.square_rank(king_test)+1, 7):
+                file_i = max(chess.square_file(king_test) - 1, 0)
+                while file_i <= min(chess.square_file(king_test)+1, 7):
+                    if rank_i != chess.square_rank(king_test) or file_i != chess.square_file(king_test):
+                        if i == 0:
+                            around_wk.add(chess.square(file_i, rank_i))
+                        else:
+                            around_bk.add(chess.square(file_i, rank_i))
+                    file_i += 1
+
+                rank_i += 1
+        # These will be weighted for piece value
+        squares_by_black_king_white_controls = 0
+        squares_by_white_king_black_controls = 0
+        mid1_1 = datetime.datetime.now()
+        self.unionOperationTime += (mid1_1-mid1).total_seconds()
         w_count, b_count = self.getTotalMaterial(pieces)
 
         m_count = w_count+b_count
@@ -604,8 +719,8 @@ class brain:
         attacking_map = {}
         tempo_count = 0
 
-        squares_by_black_king_white_controls = 0
-        squares_by_white_king_black_controls = 0
+        defenders_by_white_king = 0
+        defenders_by_black_king = 0
         # "Patzer sees a check, gives a check" - Bobby Fischer
         if t_board.is_check():
             if t_board.turn == chess.WHITE:
@@ -636,7 +751,10 @@ class brain:
         b_rook_files = []
 
         # Iterates through all of the pieces
+        start2 = datetime.datetime.now()
+        self.setupTime += (start2-mid1_1).total_seconds()
         for key, value in piece_map.items():
+            instart = datetime.datetime.now()
             # m value used to either add for white or subtract for black
             m = 1
             # Looks on tables to see where good squares are
@@ -647,14 +765,23 @@ class brain:
                 evaluation += self.table_reference[value.piece_type][key] / 100
             # Which pieces can attack what
             attacking_map[key] = t_board.attacks(key)
+            if m == 1:
+                squares_by_black_king_white_controls += attacking_map[key].intersection(around_bk).__len__()*math.sqrt(self.PIECE_VALUES[value.piece_type])
+            else:
+                squares_by_white_king_black_controls += attacking_map[key].intersection(around_wk).__len__()*math.sqrt(self.PIECE_VALUES[value.piece_type])
             # How many captures each piece has
             capture_count[key] = attacking_map[key].intersection(unions[not value.color]).__len__()
+            inend = datetime.datetime.now()
+            self.innerInnerLoopTime += (inend - instart).total_seconds()
             # Locations of pieces with a higher values than this piece
-            running_higher_pieces = chess.SquareSet()
+            """running_higher_pieces = chess.SquareSet()
+            instart = datetime.datetime.now()
             for k, v in pieces[not value.color].items():
                 if self.PIECE_VALUES[k] > self.PIECE_VALUES[value.piece_type]+0.5:
                     running_higher_pieces = running_higher_pieces.union(v.intersection(attacking_map[key]))
-            tempo_count += m * running_higher_pieces.__len__()
+            inend = datetime.datetime.now()
+            self.innerInnerLoopTime += (inend-instart).total_seconds()
+            tempo_count += m * running_higher_pieces.__len__()"""
             # Generates moving map for non-pawns
             can_move = False
             if value.piece_type != chess.PAWN:
@@ -665,6 +792,7 @@ class brain:
                 defense_map[key] = p_a
             else:
                 p_a = chess.SquareSet()
+
             # Non pawn evaluation operations
             if value.piece_type != chess.PAWN:
                 # Good to put rooks in front of queens
@@ -701,6 +829,7 @@ class brain:
                             evaluation += m * self.PIECE_DEFENDED_AGAIN_BONUS
                         if value.piece_type == chess.ROOK:
                             # Adds connected rook bonus
+
                             if (not wcr_bonus and m == 1) or (not bcr_bonus and m == -1):
                                 for i in defense_map[key]:
                                     if piece_map[i].piece_type == chess.ROOK:
@@ -709,17 +838,22 @@ class brain:
                                             wcr_bonus = True
                                         else:
                                             bcr_bonus = True
+
                 # Determines tempos off of smaller pieces
-                else:
+                """else:
+                    instart = datetime.datetime.now()
                     lower_pieces = unions[not value.color] - running_higher_pieces
                     lower_attackers = t_board.attackers(not value.color, key).intersection(lower_pieces)
                     attacks = t_board.attacks(key)
                     intersection = lower_attackers.intersection(attacks)
                     tempo_count -= m * (len(list(lower_attackers)) - len(list(intersection)))
+                    inend = datetime.datetime.now()
+                    self.innerInnerLoopTime += (inend - instart).total_seconds()"""
 
             # Pawn bonuses
             else:
                 # How far the pawn is pushed
+
                 if value.color == chess.WHITE:
                     p_adv = chess.square_rank(key)
                 else:
@@ -755,6 +889,7 @@ class brain:
                 else:
                     b_pawns[chess.square_file(key)] += 1
                     evaluation -= self.PAWN_ADVANCEMENT_BONUS * p_adv/math.pow(w_count, 0.75)
+
                 # It is good if pawns are defended by either a pawn or a non-pawn.  But non-pawn defense is better.
                 if key in defense_map.keys():
                     non_pawn = False
@@ -766,13 +901,23 @@ class brain:
                         evaluation += m*self.PAWN_PROTECTED_BY_NON_PAWN_BONUS/math.pow(m_count, 0.3)
                     else:
                         evaluation += m*self.PAWN_PROTECTED_BY_PAWN_BONUS/math.pow(m_count, 0.3)
+
+        end2 = datetime.datetime.now()
+        self.evalInteriorLoopTime += (end2-start2).total_seconds()
+
+        squares_defended_by_white_king = around_wk.intersection(unions[chess.WHITE]).__len__()
+        squares_defended_by_black_king = around_bk.intersection(unions[chess.BLACK]).__len__()
+
+        # It is good to control squares around your opponent's king
+        evaluation -= max((math.sqrt(squares_by_white_king_black_controls)-math.sqrt(squares_defended_by_white_king)) * self.SQUARES_BY_KING_OPPOSITE_CONTROLS_BONUS, 0)
+        evaluation += max((math.sqrt(squares_by_black_king_white_controls)-math.sqrt(squares_defended_by_black_king)) * self.SQUARES_BY_KING_OPPOSITE_CONTROLS_BONUS, 0)
         # Adds tempo bonus
-        mult = 1
+        """mult = 1
         if tempo_count < 0:
             mult = -1
         t_bonus = mult * math.pow(tempo_count, 2) * self.TEMPO_BONUS
-
-        evaluation += t_bonus
+        self.t_bonus+=abs(t_bonus)
+        evaluation += t_bonus"""
         # Threaten checkmate good
 
         evaluation += checkmates_threatened*self.THREATEN_CHECKMATE_BONUS
@@ -810,6 +955,8 @@ class brain:
 
         m = 1
         # Performs more pawn operations.  Goes through list twice.  Once for each side
+        start3 = datetime.datetime.now()
+        self.middleTime += (start3-end2).total_seconds()
         for c in range(2):
             # Switches sides
             if c == 1:
@@ -889,7 +1036,8 @@ class brain:
                             else:
                                 if pawn_dist < min_unstop_black:
                                     min_unstop_black = pawn_dist
-
+        end3 = datetime.datetime.now()
+        self.pawnEvalTime += (end3-start3).total_seconds()
         # A generality, but normally whoever is closer to making a queen is much better.  Adds queen value for side
         # which is closer.  So, four unstoppable pawns on the first rank is worse than 1 unstoppable pawn on the fourth
         diff = abs(min_unstop_black - min_unstop_white)
@@ -899,30 +1047,31 @@ class brain:
                 m = -1
             evaluation += m*(self.PIECE_VALUES[chess.QUEEN]-self.PIECE_VALUES[chess.PAWN]-1)*self.PIECE_VALUE_MULTIPLIER
 
-        # Determines how exposed the king is.  King should be safe.
-        k_e = self.generateKingExposure(t_board.copy(), k_positions, unions)
-
+        # Determines how exposed the king is.  King should be safe.  Too slow
+        #k_e = self.generateKingExposure(t_board, k_positions, unions)
+        end4 = datetime.datetime.now()
+        self.endSplit1 += (end4-end3).total_seconds()
         # The more pieces leave the board, the less king exposure matters
         w_mult = 1
         b_mult = 1
-        if chess.Piece.from_symbol('q') in piece_map.values():
+        if not pieces[chess.WHITE][chess.QUEEN]:
             w_mult = self.OPPONENT_QUEEN_KING_SAFETY_NEGATIVE_MULTIPLIER
-        if chess.Piece.from_symbol('Q') in piece_map.values():
+        if not pieces[chess.BLACK][chess.QUEEN]:
             b_mult = self.OPPONENT_QUEEN_KING_SAFETY_NEGATIVE_MULTIPLIER
-        w_n_bonus = w_mult*math.sqrt(k_e[0] * self.KING_EXPOSURE_NEGATIVE_VALUE)/math.sqrt(max(1, 45-b_count))
-        b_n_bonus = b_mult*math.sqrt(k_e[1] * self.KING_EXPOSURE_NEGATIVE_VALUE)/math.sqrt(max(1, 45-w_count))
-        evaluation -= w_n_bonus
-        evaluation += b_n_bonus
+        #w_n_bonus = w_mult*math.sqrt(k_e[0] * self.KING_EXPOSURE_NEGATIVE_VALUE)/math.sqrt(max(1, 45-b_count))
+        #b_n_bonus = b_mult*math.sqrt(k_e[1] * self.KING_EXPOSURE_NEGATIVE_VALUE)/math.sqrt(max(1, 45-w_count))
+        #evaluation -= w_n_bonus
+        #evaluation += b_n_bonus
 
-        # It is good to control squares around your opponent's king
-        evaluation -= math.sqrt(squares_by_white_king_black_controls * self.SQUARES_BY_KING_OPPOSITE_CONTROLS_BONUS)
-        evaluation += math.sqrt(squares_by_black_king_white_controls * self.SQUARES_BY_KING_OPPOSITE_CONTROLS_BONUS)
+
         # Having kings which are close to each other favors the side with more material
         proximity_multiplier = math.sqrt(abs(max(w_count, b_count)/min(w_count, b_count)))
         if b_count > w_count:
             proximity_multiplier *= -1
         evaluation -= (chess.square_distance(k_positions[chess.Piece.from_symbol('K')], k_positions[chess.Piece.from_symbol('k')])*self.KING_PROXIMITY_BONUS * proximity_multiplier)/math.sqrt(m_count)
-
+        end = datetime.datetime.now()
+        self.endTime +=(end-end4).total_seconds()
+        self.positionEvaluationTime += (end-start).total_seconds()
         return evaluation
     # Determines if the position is a draw
     def checkDrawClaimable(self, t_board):
@@ -951,10 +1100,13 @@ class brain:
         return evaluation
     # Generates the files, ranks, and color of each pawn
     def generatePawnMap(self, piece_map):
+
         pawn_map = []
         for key, value in piece_map.items():
             if value.piece_type == chess.PAWN:
                 pawn_map.append([chess.square_file(key), chess.square_rank(key), value.color])
+
+
         return pawn_map
     # Determines if a pawn is isolated
     def isIsolated(self, p_array, index):
@@ -971,37 +1123,51 @@ class brain:
          return False
     # Determines if a pawn is passed
     def isPassed(self, pawn_map, pawn_square, p_array=None):
+        start = datetime.datetime.now()
         if p_array is None:
             p_array = [1, 1, 1, 1, 1, 1, 1, 1]
         pf = chess.square_file(pawn_square)
         pr = chess.square_rank(pawn_square)
         pc = self.board.color_at(pawn_square)
         if p_array[max(0, pf - 1)] == 0 and p_array[pf] == 0 and p_array[min(7, pf + 1)] == 0:
+            end = datetime.datetime.now()
+            self.isPassedTime += (end-start).total_seconds()
             return True
         else:
             for i in pawn_map:
                 if i[2] != pc:
                     if pf - 1 <= i[0] <= pf + 1:
                         if (pc == chess.WHITE and i[1] > pr) or (pc == chess.BLACK and i[1] < pr):
+                            end = datetime.datetime.now()
+                            self.isPassedTime += (end-start).total_seconds()
                             return False
+        end = datetime.datetime.now()
+        self.isPassedTime += (end-start).total_seconds()
         return True
     # Determines if a pawn is blocked or not, assumes inputted key is a pawn
     def isBlocked(self, key):
+        start = datetime.datetime.now()
         if self.board.color_at(key) == chess.WHITE:
             rank_to = chess.square_rank(key) + 1
         else:
             rank_to = chess.square_rank(key) - 1
         if self.board.piece_at(chess.square(chess.square_file(key), rank_to)) is not None:
+            end = datetime.datetime.now()
+            self.isBlockedTime += (end-start).total_seconds()
             return True
+        end = datetime.datetime.now()
+        self.isBlockedTime += (end-start).total_seconds()
         return False
     # How far a given pawn is away from queening
     def distFromQueening(self, square):
+
         if self.board.color_at(square) == chess.WHITE:
             return 8 - chess.square_rank(square)
         else:
             return chess.square_rank(square) - 1
     # Determines how much material is on board
     def getTotalMaterial(self, pieces):
+        start = datetime.datetime.now()
         w_count = 0
         b_count = 0
         for key, value in pieces.items():
@@ -1018,11 +1184,17 @@ class brain:
                         w_count += 2.5
                     else:
                         b_count += 2.5
+        end = datetime.datetime.now()
+        self.getTotalMaterialTime += (end-start).total_seconds()
         return w_count, b_count
     # Determines king exposure by using the method Alan Turing recommended in his program "Turbochamp".
     # Places a same color queen on the king's square and calculates that piece's mobility
     # Reduces that side's evaluation by the square root of how many squares that queen can go
     def generateKingExposure(self, t_board, k_positions, unions):
+        start = datetime.datetime.now()
+        #ms = t_board.move_stack.copy()
+        #print("----")
+        #print(ms)
         w_king_exposure = 0
         b_king_exposure = 0
         # Iterates through king locations
@@ -1031,14 +1203,19 @@ class brain:
             q_value = chess.Piece.from_symbol('q')
             q_value.color = value.color
 
-            t_board.set_piece_at(key, q_value)
-            t_board.turn = value.color
+            t_board.set_piece_at(key, q_value, False)
+
             exposure = (t_board.attacks(key) - unions[chess.WHITE] - unions[chess.BLACK]).__len__()
-            if t_board.turn == chess.WHITE:
+            if q_value.color == chess.WHITE:
                 w_king_exposure += exposure
             else:
                 b_king_exposure += exposure
+
             t_board.set_piece_at(key, value)
+        #print(ms)
+        #t_board.move_stack = ms
+        end = datetime.datetime.now()
+        self.generateKingExposureTime += (end-start).total_seconds()
         return w_king_exposure, b_king_exposure
     # References an endgame tablebase
     # WDL means win/draw/loss.
@@ -1123,4 +1300,5 @@ class brain:
         start_wdl = self.tb.probe_wdl(self.board)
 
         return start_wdl
+
 

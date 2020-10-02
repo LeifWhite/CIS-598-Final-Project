@@ -1,5 +1,5 @@
-# OLD FILE, cython_brain now used for increased compiler speed
-# Controls how the program thinks and plays
+#!python
+#cython: language_level=3
 # Controls how the program thinks and plays
 
 import chess
@@ -29,10 +29,6 @@ class brain:
         self.setupTime =0
         self.middleTime=0
         self.endTime = 0
-        self.endSplit1 = 0
-        self.innerInnerLoopTime=0
-
-        self.t_bonus=0
 
         self.board = copy.deepcopy(board)
         self.test = True
@@ -42,10 +38,10 @@ class brain:
         self.current_depth = 0
         self.tb = chess.syzygy.open_tablebase("./OmegaFifteen/3-4-5piecesSyzygy/3-4-5")
         # Search Parameters
-        self.MIN_DEPTH_SEARCH = 1
-        self.MAX_DEPTH_SEARCH = 6
-        self.MAX_INITIAL_SEARCH = 4
-        self.ATTACKS_HIGHER_PIECE_PLIES = 1
+        self.MIN_DEPTH_SEARCH = 2
+        self.MAX_DEPTH_SEARCH = 8
+        self.MAX_INITIAL_SEARCH = 6
+        self.ATTACKS_HIGHER_PIECE_PLIES = 2
         self.CHECK_PLIES = 3
         # Evaluation Factors
         self.PIECE_VALUE_MULTIPLIER = 5
@@ -164,11 +160,7 @@ class brain:
             -30,-10, 20, 30, 30, 20,-10,-30,
             -30,-30,  0,  0,  0,  0,-30,-30,
             -50,-30,-30,-30,-30,-30,-30,-50]
-        self.HIGHER_PIECES = {
-            chess.KING: [],
-            chess.QUEEN: [],
 
-        }
         self.table_reference = {
             chess.KING: self.KING_TABLE,
 
@@ -199,8 +191,6 @@ class brain:
         print(m*val)
         print(best)
         print("ITERATIONS: " + str(self.qvaluations))
-        if self.qvaluations>0:
-            print("AVERAGE T BONUS: "+str(self.t_bonus/self.qvaluations))
         print("\n")
         self.tb.close()
         end = datetime.datetime.now()
@@ -213,26 +203,25 @@ class brain:
         print("     Union Operation Time: "+str(self.unionOperationTime))
         print("     Setup Time: "+str(self.setupTime))
         print("     Interior Loop Time: "+str(self.evalInteriorLoopTime))
-        print("         Interior Interior Loop Time: "+str(self.innerInnerLoopTime))
         print("     Middle Time: "+str(self.middleTime))
         print("     Pawn Eval Time: "+str(self.pawnEvalTime))
-        print("     End Time 1: "+str(self.endSplit1))
-        print("     End Time 2: "+str(self.endTime))
+        print("     End Time: "+str(self.endTime))
         print("Total Time: "+str(end-start))
         return best
     # TODO: Establish a percentage of search complete of move
     # First level of search
     def selectMove(self):
         # Tries checking tablebase and book first
-        #choice = chess.polyglot.MemoryMappedReader("./OmegaFifteen/ProDeo292/books/ProDeo.bin").weighted_choice(self.board)
         try:
             #raise ValueError()
             piece_count = chess.popcount(self.board.occupied_co[0]) + chess.popcount(self.board.occupied_co[1])
             if piece_count <= 5:
                 return self.endgameTablebase()
 
+
+
             choice = chess.polyglot.MemoryMappedReader(
-                "./OmegaFifteen/ProDeo292/books/ProDeo.bin"
+                "./OmegaFifteen/ProDeo292/books/elo2500.bin"
                 ).weighted_choice(
                 self.board)
             weight = choice.weight
@@ -323,7 +312,7 @@ class brain:
         best_score = -9999
         # If max depth exceeded, keep looking, but only at checks and captures
         if depth >= max_depth-1:
-            return self.attacksHigherPieceSearch(alpha, beta)
+            return self.checkSearch(alpha, beta)
         if len(self.i) == depth:
             self.i.append(0)
         has_moves = False
@@ -358,53 +347,7 @@ class brain:
         if not has_moves:
             return self.staticEvaluation(self.board)
         return alpha
-    def attacksHigherPieceSearch(self, alpha, beta, qdepth=0):
-        piece_count = chess.popcount(self.board.occupied_co[0]) + chess.popcount(self.board.occupied_co[1])
-        if piece_count <= 5:
-            score = self.staticEvaluation(self.board)
-            self.in_tablebase = False
-            return score
-        best_score = -9999
-        # If max depth exceeded, keep looking, but only at checks and captures
-        if qdepth >= self.ATTACKS_HIGHER_PIECE_PLIES:
-            return self.checkSearch(alpha, beta)
-        has_moves = False
-        # This is important to check if the game could be over here,
-        # so that it doesn't just return the game ends founds in the quiesce function
-        if self.checkDrawClaimable(self.board) or self.board.is_game_over():
-            return self.staticEvaluation(self.board)
-        is_check = self.board.is_check()
-        # Iterates through legal moves
-        for i in self.board.legal_moves:
 
-            if not has_moves:
-                has_moves = True
-            # Same thing as before, pushes move, recursively scans, uses negamax
-            # Negamax implementation pretty much uses alpha-beta operating under the principle that what is good
-            # for me is bad for my opponent and vise versa
-            self.current_depth += 1
-            if self.attacksHigherPiece(i):
-                self.board.push(i)
-                score = -self.attacksHigherPieceSearch(alpha=-beta, beta=-alpha, qdepth=qdepth + 1)
-            elif not is_check and not self.board.gives_check(i):
-                self.board.push(i)
-                score = -self.quiesce(alpha=-beta, beta=-alpha, qdepth=qdepth + 1)
-            else:
-                self.board.push(i)
-                score = -self.checkSearch(alpha=-beta, beta=-alpha, qdepth=qdepth + 1)
-            self.board.pop()
-            self.current_depth -= 1
-            # Alpha-beta pruning
-            if score >= beta:
-                return beta
-            if score > best_score:
-                best_score = score
-                if score > alpha:
-                    alpha = score
-        # I don't think this is necessary... just too scared to remove it.
-        if not has_moves:
-            return self.staticEvaluation(self.board)
-        return alpha
     def checkSearch(self, alpha, beta, qdepth=0):
         piece_count = chess.popcount(self.board.occupied_co[0]) + chess.popcount(self.board.occupied_co[1])
         if piece_count <= 5:
@@ -450,6 +393,7 @@ class brain:
             return self.staticEvaluation(self.board)
         return alpha
     # Third level of search, evaluates captures and some checks
+    # TODO Fix captures
     def quiesce(self, alpha, beta, qdepth=0, checked=False):
         #if self.checkDrawClaimable(self.board) or self.board.is_game_over():
         #  return self.staticEvaluation(self.board)
@@ -601,9 +545,9 @@ class brain:
         while sum_total < self.time:
             sum_used = sum_total
             if counter % 2 == 0:
-                sum_total *= i1 * (math.pow(m1, 0.8) / 4.5)
+                sum_total *= i1 * (math.sqrt(m1) / 4)
             else:
-                sum_total *= i2 * (math.pow(m2, 0.8) / 4.5)
+                sum_total *= i2 * (math.sqrt(m2) / 4)
             counter += 1
         counter -= 1
         return counter, sum_used
@@ -638,10 +582,9 @@ class brain:
                 or t_board.is_stalemate() \
                 or t_board.is_insufficient_material():
             return 0
-        mid1 = datetime.datetime.now()
-        self.checkmateOrDrawTime += (mid1-start).total_seconds()
-        evaluation = 0
-        piece_map = t_board.piece_map()
+
+        cdef float evaluation = 0
+
         pieces = {
             chess.WHITE: {
                 chess.KING: t_board.pieces(chess.KING, chess.WHITE),
@@ -660,283 +603,11 @@ class brain:
                 chess.PAWN: t_board.pieces(chess.PAWN, chess.BLACK)
             }
         }
-        pw = pieces[chess.WHITE]
-        pb = pieces[chess.BLACK]
-        unions = {
-            chess.WHITE: pw[chess.KING].union(pw[chess.QUEEN].union(
-                pw[chess.ROOK].union(pw[chess.BISHOP].union(pw[chess.KNIGHT].union(pw[chess.PAWN]))))),
-            chess.BLACK: pb[chess.KING].union(pb[chess.QUEEN].union(
-                pb[chess.ROOK].union(pb[chess.BISHOP].union(pb[chess.KNIGHT].union(pb[chess.PAWN])))))
-        }
-        k_positions = {
-            chess.Piece.from_symbol('K'): chess.lsb(pieces[chess.WHITE][chess.KING].mask),
-            chess.Piece.from_symbol('k'): chess.lsb(pieces[chess.BLACK][chess.KING].mask)
-        }
-        around_wk = chess.SquareSet()
-        around_bk = chess.SquareSet()
-        king_test = k_positions[chess.Piece.from_symbol('K')]
-        rank_i = max(chess.square_rank(king_test)-1, 0)
-        for i in range(2):
-            if i == 1:
-                king_test = k_positions[chess.Piece.from_symbol('k')]
-                rank_i = max(chess.square_rank(king_test)-1, 0)
-            while rank_i <= min(chess.square_rank(king_test)+1, 7):
-                file_i = max(chess.square_file(king_test) - 1, 0)
-                while file_i <= min(chess.square_file(king_test)+1, 7):
-                    if rank_i != chess.square_rank(king_test) or file_i != chess.square_file(king_test):
-                        if i == 0:
-                            around_wk.add(chess.square(file_i, rank_i))
-                        else:
-                            around_bk.add(chess.square(file_i, rank_i))
-                    file_i += 1
 
-                rank_i += 1
-        # These will be weighted for piece value
-        squares_by_black_king_white_controls = 0
-        squares_by_white_king_black_controls = 0
-        mid1_1 = datetime.datetime.now()
-        self.unionOperationTime += (mid1_1-mid1).total_seconds()
+
         w_count, b_count = self.getTotalMaterial(pieces)
 
         m_count = w_count+b_count
-        # Total material is approximately 83 (including 2.5 for each king)
-        if (len(t_board.pieces(chess.QUEEN, chess.WHITE)) == 0
-                and len(t_board.pieces(chess.QUEEN, chess.BLACK)) == 0
-                and m_count < 45) or m_count < 30:
-            self.table_reference[chess.KING] = self.KING_TABLE_END_GAME
-            self.game_phase = "endgame"
-        elif self.table_reference[chess.KING] == self.KING_TABLE_END_GAME:
-            self.table_reference[chess.KING] = self.KING_TABLE
-            self.game_phase = "opening"
-        # Legal moves if you can move into check
-        pseudo_m_legal_moves = t_board.pseudo_legal_moves
-        if self.game_phase != "endgame" and (pseudo_m_legal_moves.count() >= 40 or m_count <= 76 or self.out_of_book):
-            self.game_phase = "middlegame"
-
-        # Dictionaries to define the mobility of each piece and what they can capture and if those captures are tempos
-        moving_map = {}
-        capture_count = {}
-        attacking_map = {}
-        tempo_count = 0
-
-        defenders_by_white_king = 0
-        defenders_by_black_king = 0
-        # "Patzer sees a check, gives a check" - Bobby Fischer
-        if t_board.is_check():
-            if t_board.turn == chess.WHITE:
-                evaluation -= self.CHECK_BONUS
-                tempo_count += 1
-            else:
-                evaluation += self.CHECK_BONUS
-                tempo_count -= 1
-        checkmates_threatened = 0
-        # Determines which pieces defend what.  The more defended pieces the better.
-        defense_map = {}
-        # Connected rook bonus
-        wcr_bonus = False
-        bcr_bonus = False
-        # Used to evaluate pawn structure.  Doubled pawns bad.  Isolated pawns bad.  Doubled isolated pawns really bad.
-        w_pawns = [0, 0, 0, 0, 0, 0, 0, 0]
-        b_pawns = [0, 0, 0, 0, 0, 0, 0, 0]
-        # Strictly material advantage
-        mat_eval = 0
-        # Used for calculations that require both the rank and file of each pawn.  In format [file, rank, color]
-        pawn_map = []
-        # Where the kings are
-
-        # To tell if the queen/king share a file with the opponent's rooks
-        w_q_file = None
-        b_q_file = None
-        w_rook_files = []
-        b_rook_files = []
-
-        # Iterates through all of the pieces
-        start2 = datetime.datetime.now()
-        self.setupTime += (start2-mid1_1).total_seconds()
-        for key, value in piece_map.items():
-            instart = datetime.datetime.now()
-            # m value used to either add for white or subtract for black
-            m = 1
-            # Looks on tables to see where good squares are
-            if value.color == chess.BLACK:
-                m = -1
-                evaluation -= self.table_reference[value.piece_type][chess.square_mirror(key)] / 100
-            else:
-                evaluation += self.table_reference[value.piece_type][key] / 100
-            # Which pieces can attack what
-            attacking_map[key] = t_board.attacks(key)
-            if m == 1:
-                squares_by_black_king_white_controls += attacking_map[key].intersection(around_bk).__len__()*math.sqrt(self.PIECE_VALUES[value.piece_type])
-            else:
-                squares_by_white_king_black_controls += attacking_map[key].intersection(around_wk).__len__()*math.sqrt(self.PIECE_VALUES[value.piece_type])
-            # How many captures each piece has
-            capture_count[key] = attacking_map[key].intersection(unions[not value.color]).__len__()
-            inend = datetime.datetime.now()
-            self.innerInnerLoopTime += (inend - instart).total_seconds()
-            # Locations of pieces with a higher values than this piece
-            """running_higher_pieces = chess.SquareSet()
-            instart = datetime.datetime.now()
-            for k, v in pieces[not value.color].items():
-                if self.PIECE_VALUES[k] > self.PIECE_VALUES[value.piece_type]+0.5:
-                    running_higher_pieces = running_higher_pieces.union(v.intersection(attacking_map[key]))
-            inend = datetime.datetime.now()
-            self.innerInnerLoopTime += (inend-instart).total_seconds()
-            tempo_count += m * running_higher_pieces.__len__()"""
-            # Generates moving map for non-pawns
-            can_move = False
-            if value.piece_type != chess.PAWN:
-                moving_map[key] = attacking_map[key] - attacking_map[key].intersection(unions[value.color])
-                can_move = True
-            if value.piece_type != chess.KING:
-                p_a = t_board.attackers(value.color, key)
-                defense_map[key] = p_a
-            else:
-                p_a = chess.SquareSet()
-
-            # Non pawn evaluation operations
-            if value.piece_type != chess.PAWN:
-                # Good to put rooks in front of queens
-                if value.piece_type == chess.QUEEN:
-                    if m == 1 and w_q_file is None:
-                        w_q_file = chess.square_file(key)
-                    elif m == 1:
-                        w_q_file = -1
-                    elif b_q_file is None:
-                        b_q_file = chess.square_file(key)
-                    else:
-                        b_q_file = -1
-                elif value.piece_type == chess.ROOK:
-                    if m == 1:
-                        w_rook_files.append(chess.square_file(key))
-                    else:
-                        b_rook_files.append(chess.square_file(key))
-                if can_move:
-                    # Adds mobility and capturability bonus
-                    if value.piece_type != chess.QUEEN or self.game_phase != "opening":
-                        evaluation += m * math.sqrt(len(moving_map[key])
-                                                    * self.PIECE_MOBILITY_BONUS + capture_count[key]
-                                                    * self.PIECE_CAN_CAPTURE_BONUS)
-
-                # Adds bonus if pieces are defended
-                if p_a.__len__() >= 1:
-                    # NBR piece operations
-                    if value.piece_type == chess.ROOK \
-                            or value.piece_type == chess.KNIGHT \
-                            or value.piece_type == chess.BISHOP:
-                        evaluation += m * self.PIECE_DEFENDED_BONUS
-                        # Adds slightly smaller bonus if pieces are defended multiple times
-                        if len(defense_map[key]) >= 2:
-                            evaluation += m * self.PIECE_DEFENDED_AGAIN_BONUS
-                        if value.piece_type == chess.ROOK:
-                            # Adds connected rook bonus
-
-                            if (not wcr_bonus and m == 1) or (not bcr_bonus and m == -1):
-                                for i in defense_map[key]:
-                                    if piece_map[i].piece_type == chess.ROOK:
-                                        evaluation += self.CONNECTED_ROOKS_BONUS
-                                        if m == 1:
-                                            wcr_bonus = True
-                                        else:
-                                            bcr_bonus = True
-
-                # Determines tempos off of smaller pieces
-                """else:
-                    instart = datetime.datetime.now()
-                    lower_pieces = unions[not value.color] - running_higher_pieces
-                    lower_attackers = t_board.attackers(not value.color, key).intersection(lower_pieces)
-                    attacks = t_board.attacks(key)
-                    intersection = lower_attackers.intersection(attacks)
-                    tempo_count -= m * (len(list(lower_attackers)) - len(list(intersection)))
-                    inend = datetime.datetime.now()
-                    self.innerInnerLoopTime += (inend - instart).total_seconds()"""
-
-            # Pawn bonuses
-            else:
-                # How far the pawn is pushed
-
-                if value.color == chess.WHITE:
-                    p_adv = chess.square_rank(key)
-                else:
-                    p_adv = (8-chess.square_rank(key))
-                # If it is the endgame, it is advantageous to have your king near you opponents pawns
-                # It is also advantageous to have your king near your own pawns in defense, but not as much
-                if self.game_phase == "endgame":
-                    if value.color == chess.WHITE:
-                        evaluation += math.pow((chess.square_distance(k_positions[chess.Piece.from_symbol('k')], key)),
-                                               2)*self.KING_ATTACK_PAWNS_BONUS
-                        evaluation -= math.pow((chess.square_distance(k_positions[chess.Piece.from_symbol('K')], key)),
-                                               2) * self.KING_DEFEND_PAWNS_BONUS
-                    else:
-                        evaluation += math.pow((chess.square_distance(k_positions[chess.Piece.from_symbol('k')], key)),
-                                               2) * self.KING_DEFEND_PAWNS_BONUS
-                        evaluation -= math.pow((chess.square_distance(k_positions[chess.Piece.from_symbol('K')], key)),
-                                               2) * self.KING_ATTACK_PAWNS_BONUS
-                # Creates pawn map to determine which pawns are passed
-                pawn_map.append([chess.square_file(key), chess.square_rank(key), value.color])
-                # Negative bonus for blocked pawns
-                if self.isBlocked(key):
-                    f = chess.square_file(key)
-                    if (f == 2 or f == 3 or f == 4) or self.game_phase == "endgame":
-                        evaluation -= m*self.CDE_PAWN_BLOCKED_NEGATIVE_BONUS*math.sqrt(p_adv)
-                    else:
-                        evaluation -= m*self.PAWN_BLOCKED_NEGATIVE_BONUS*math.sqrt(p_adv)
-
-                # It is good if pawns are advanced.  Especially with less material on board.
-                if value.color == chess.WHITE:
-                    w_pawns[chess.square_file(key)] += 1
-                    evaluation += self.PAWN_ADVANCEMENT_BONUS * p_adv/math.pow(b_count, 0.75)
-
-                else:
-                    b_pawns[chess.square_file(key)] += 1
-                    evaluation -= self.PAWN_ADVANCEMENT_BONUS * p_adv/math.pow(w_count, 0.75)
-
-                # It is good if pawns are defended by either a pawn or a non-pawn.  But non-pawn defense is better.
-                if key in defense_map.keys():
-                    non_pawn = False
-                    for i in defense_map[key]:
-                        if piece_map[i].piece_type != chess.PAWN:
-                            non_pawn = True
-
-                    if non_pawn:
-                        evaluation += m*self.PAWN_PROTECTED_BY_NON_PAWN_BONUS/math.pow(m_count, 0.3)
-                    else:
-                        evaluation += m*self.PAWN_PROTECTED_BY_PAWN_BONUS/math.pow(m_count, 0.3)
-
-        end2 = datetime.datetime.now()
-        self.evalInteriorLoopTime += (end2-start2).total_seconds()
-
-        squares_defended_by_white_king = around_wk.intersection(unions[chess.WHITE]).__len__()
-        squares_defended_by_black_king = around_bk.intersection(unions[chess.BLACK]).__len__()
-
-        # It is good to control squares around your opponent's king
-        evaluation -= max((math.sqrt(squares_by_white_king_black_controls)-math.sqrt(squares_defended_by_white_king)) * self.SQUARES_BY_KING_OPPOSITE_CONTROLS_BONUS, 0)
-        evaluation += max((math.sqrt(squares_by_black_king_white_controls)-math.sqrt(squares_defended_by_black_king)) * self.SQUARES_BY_KING_OPPOSITE_CONTROLS_BONUS, 0)
-        # Adds tempo bonus
-        """mult = 1
-        if tempo_count < 0:
-            mult = -1
-        t_bonus = mult * math.pow(tempo_count, 2) * self.TEMPO_BONUS
-        self.t_bonus+=abs(t_bonus)
-        evaluation += t_bonus"""
-        # Threaten checkmate good
-
-        evaluation += checkmates_threatened*self.THREATEN_CHECKMATE_BONUS
-        # It is good to still be able to castle.  Don't want to reward this too much though, as otherwise it could
-        # deincentivize castling
-        if t_board.has_castling_rights(chess.WHITE):
-            evaluation += self.CAN_CASTLE_BONUS
-        if t_board.has_castling_rights(chess.BLACK):
-            evaluation -= self.CAN_CASTLE_BONUS
-        # Rook in front of king/queen good
-        if self.game_phase != "endgame":
-            if w_q_file is not None and w_q_file != -1 and w_q_file in b_rook_files:
-                evaluation -= self.ROOK_OPPOSE_KQ
-            if b_q_file is not None and b_q_file != -1 and b_q_file in w_rook_files:
-                evaluation += self.ROOK_OPPOSE_KQ
-            if chess.square_file(k_positions[chess.Piece.from_symbol('K')]) in b_rook_files:
-                evaluation -= self.ROOK_OPPOSE_KQ
-            if chess.square_file(k_positions[chess.Piece.from_symbol('k')]) in w_rook_files:
-                evaluation += self.ROOK_OPPOSE_KQ
 
         # Determines who has more pieces than their opponent
         w_minus_pawns = w_count - pieces[chess.WHITE][chess.PAWN].__len__() * self.PIECE_VALUES[chess.PAWN]
@@ -951,126 +622,7 @@ class brain:
         piece_eval *= math.sqrt(max(w_minus_pawns, b_minus_pawns) / min(w_minus_pawns, b_minus_pawns))
         pawn_eval *= self.PIECE_VALUE_MULTIPLIER
         evaluation += piece_eval+pawn_eval
-        o_pawns = w_pawns
-
-        m = 1
-        # Performs more pawn operations.  Goes through list twice.  Once for each side
-        start3 = datetime.datetime.now()
-        self.middleTime += (start3-end2).total_seconds()
-        for c in range(2):
-            # Switches sides
-            if c == 1:
-                o_pawns = b_pawns
-                m = -1
-            # Isolated, or doubled disadvantages
-            for i in range(len(o_pawns)):
-                if self.isIsolated(o_pawns, i):
-                    if o_pawns[i] > 1:
-                        evaluation -= m * (o_pawns[i]-1) * self.DOUBLED_ISOLATED_PAWN_NEGATIVE_BONUS
-                    else:
-                        evaluation -= m * self.ISOLATED_PAWN_NEGATIVE_BONUS
-                elif w_pawns[i] > 1:
-                    evaluation -= m * (o_pawns[i] - 1) * self.DOUBLED_PAWN_NEGATIVE_BONUS
-       # The following numbers are used to determine unstoppable passed pawns by rule of the square
-        min_unstop_black = 999
-        min_unstop_white = 999
-        for i in pawn_map:
-            if i[2] == chess.WHITE:
-                o_pawns = b_pawns
-                m = 1
-                advancement = i[1]
-            else:
-                o_pawns = w_pawns
-                m = -1
-                advancement = 8-i[1]
-            pawn_square = chess.square(i[0], i[1])
-            if self.isPassed(pawn_map, pawn_square, o_pawns):
-                # Passed pawn bonus
-                evaluation += m * self.PASSED_PAWN_BONUS*math.pow(advancement, 1.5)/math.pow(m_count, 0.3)
-                # This program *incorrectly* assumes that unstoppable passed pawns can only occur in the endgame
-                # However, as the way it is checking if a pawn is unstoppable by rule of the square, it doesn't matter
-                if self.game_phase == "endgame":
-                    # Takes the pawn map of the side of the evaluated pawn
-                    if m == 1:
-                        po = pb
-
-                        # To account for moving up two
-                        if i[1] == 1:
-
-                            pawn_square = chess.square(i[0], i[1]+1)
-
-                    else:
-                        po = pw
-                        # To account for moving up two
-                        if i[1] == 6:
-                            pawn_square = chess.square(i[0], i[1] - 1)
-                    # If there is no material
-                    if len(po[chess.QUEEN]) == 0 and len(po[chess.ROOK]) == 0 and len(po[chess.BISHOP]) == 0 and len(po[chess.KNIGHT]) == 0:
-                        if i[2] == chess.WHITE:
-                            qr = 7
-                        else:
-                            qr = 0
-                        # The square you are aiming for, 8th rank for white, 1st for black
-                        queening_square = chess.square(i[0], qr)
-                        # Penalty of 1 if it is not your turn
-                        o_turn_penalty = 0
-                        if t_board.turn != i[2]:
-                            o_turn_penalty = 1
-                        # Penalty of 1 if your king is in the way
-                        king_in_way_penalty = 0
-                        if ((chess.square_rank(t_board.king(i[2])) > chess.square_rank(pawn_square) and i[2] == chess.WHITE)\
-                            or (chess.square_rank(t_board.king(i[2])) < chess.square_rank(pawn_square) and i[2] == chess.BLACK))\
-                            and chess.square_file(t_board.king(i[2])) == i[0]:
-                            king_in_way_penalty = 2
-                        pawn_dist = chess.square_distance(pawn_square, queening_square)\
-                                    + o_turn_penalty\
-                                    + king_in_way_penalty
-
-                        # Checks to see which is closer to the queening square, the pawn or the king
-                        # This currently doesn't account for two stoppable passers which can't both be stopped
-                        if pawn_dist < chess.square_distance(t_board.king(not i[2]), queening_square):
-                            # Sets minimum unstoppable distance for that side
-                            if m == 1:
-                                if pawn_dist < min_unstop_white:
-                                    min_unstop_white = pawn_dist
-                            else:
-                                if pawn_dist < min_unstop_black:
-                                    min_unstop_black = pawn_dist
-        end3 = datetime.datetime.now()
-        self.pawnEvalTime += (end3-start3).total_seconds()
-        # A generality, but normally whoever is closer to making a queen is much better.  Adds queen value for side
-        # which is closer.  So, four unstoppable pawns on the first rank is worse than 1 unstoppable pawn on the fourth
-        diff = abs(min_unstop_black - min_unstop_white)
-        if diff > 0:
-            m = 1
-            if min_unstop_white > min_unstop_black:
-                m = -1
-            evaluation += m*(self.PIECE_VALUES[chess.QUEEN]-self.PIECE_VALUES[chess.PAWN]-1)*self.PIECE_VALUE_MULTIPLIER
-
-        # Determines how exposed the king is.  King should be safe.  Too slow
-        #k_e = self.generateKingExposure(t_board, k_positions, unions)
-        end4 = datetime.datetime.now()
-        self.endSplit1 += (end4-end3).total_seconds()
-        # The more pieces leave the board, the less king exposure matters
-        w_mult = 1
-        b_mult = 1
-        if not pieces[chess.WHITE][chess.QUEEN]:
-            w_mult = self.OPPONENT_QUEEN_KING_SAFETY_NEGATIVE_MULTIPLIER
-        if not pieces[chess.BLACK][chess.QUEEN]:
-            b_mult = self.OPPONENT_QUEEN_KING_SAFETY_NEGATIVE_MULTIPLIER
-        #w_n_bonus = w_mult*math.sqrt(k_e[0] * self.KING_EXPOSURE_NEGATIVE_VALUE)/math.sqrt(max(1, 45-b_count))
-        #b_n_bonus = b_mult*math.sqrt(k_e[1] * self.KING_EXPOSURE_NEGATIVE_VALUE)/math.sqrt(max(1, 45-w_count))
-        #evaluation -= w_n_bonus
-        #evaluation += b_n_bonus
-
-
-        # Having kings which are close to each other favors the side with more material
-        proximity_multiplier = math.sqrt(abs(max(w_count, b_count)/min(w_count, b_count)))
-        if b_count > w_count:
-            proximity_multiplier *= -1
-        evaluation -= (chess.square_distance(k_positions[chess.Piece.from_symbol('K')], k_positions[chess.Piece.from_symbol('k')])*self.KING_PROXIMITY_BONUS * proximity_multiplier)/math.sqrt(m_count)
         end = datetime.datetime.now()
-        self.endTime +=(end-end4).total_seconds()
         self.positionEvaluationTime += (end-start).total_seconds()
         return evaluation
     # Determines if the position is a draw
@@ -1192,9 +744,6 @@ class brain:
     # Reduces that side's evaluation by the square root of how many squares that queen can go
     def generateKingExposure(self, t_board, k_positions, unions):
         start = datetime.datetime.now()
-        #ms = t_board.move_stack.copy()
-        #print("----")
-        #print(ms)
         w_king_exposure = 0
         b_king_exposure = 0
         # Iterates through king locations
@@ -1203,17 +752,14 @@ class brain:
             q_value = chess.Piece.from_symbol('q')
             q_value.color = value.color
 
-            t_board.set_piece_at(key, q_value, False)
-
+            t_board.set_piece_at(key, q_value)
+            t_board.turn = value.color
             exposure = (t_board.attacks(key) - unions[chess.WHITE] - unions[chess.BLACK]).__len__()
-            if q_value.color == chess.WHITE:
+            if t_board.turn == chess.WHITE:
                 w_king_exposure += exposure
             else:
                 b_king_exposure += exposure
-
             t_board.set_piece_at(key, value)
-        #print(ms)
-        #t_board.move_stack = ms
         end = datetime.datetime.now()
         self.generateKingExposureTime += (end-start).total_seconds()
         return w_king_exposure, b_king_exposure
@@ -1300,5 +846,4 @@ class brain:
         start_wdl = self.tb.probe_wdl(self.board)
 
         return start_wdl
-
 

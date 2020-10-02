@@ -4,7 +4,13 @@ import chess
 import chess.pgn
 import random
 import pyximport; pyximport.install()
-import cython_brain
+testing = True
+if not testing:
+    import cython_brain
+    import cython_brain_mat_only
+else:
+    import brain
+
 
 class game:
 
@@ -47,8 +53,19 @@ class game:
 
             elif mover == "bot":
 
-                b = cython_brain.brain(self.board)
-                t = 15000
+                if not testing:
+                    b = cython_brain.brain(self.board)
+                    t = 15000
+                else:
+                    b = brain.brain(self.board)
+                    t = 6000
+
+
+                move_inputted = b.findMove(time=t)
+            elif mover == "mat":
+
+                b = cython_brain_mat_only.brain(self.board)
+                t = 150000
 
                 move_inputted = b.findMove(time=t)
             self.board.push(move_inputted)
