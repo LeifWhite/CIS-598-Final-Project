@@ -5,9 +5,9 @@ This program is a python based standard chess engine made by Leif White for my s
 
 Summer time log: Approximately 90 hours of prior work
 
-Work over semester: 18 hours
+Work over semester: 21 hours
 
-Total work: 108 hours
+Total work: 111 hours
 
 
 Plans for future improvements:
