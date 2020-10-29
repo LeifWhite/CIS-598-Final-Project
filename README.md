@@ -31,4 +31,4 @@ Plans for future improvements:
 
 6. DONE EQUIVALENT: Give notion of move percentage completion. EQUIVALENT: Allocated subtime to moves in deeper plies.  
 
-7. Program concept of time controls and adaptability to less time
+7. DONE: Program concept of time controls and adaptability to less time
