@@ -5,9 +5,9 @@ This program is a python based standard chess engine made by Leif White for my s
 
 Summer time log: Approximately 90 hours of prior work
 
-Work over semester: 33 hours
+Work over semester: 39 hours
 
-Total work: 123 hours
+Total work: 129 hours
 
 
 Plans for future improvements:
@@ -23,9 +23,9 @@ Plans for future improvements:
 
 2. DONE: Modify programming language to allow faster processing
 
-3. Improve endgame evaluation
+3. DONE: Improve endgame evaluation
 
-4. Create bot account on online chess website to estimate Elo rating
+4. DONE: Create bot account on online chess website to estimate Elo rating
 
 5. DONE: Have engine query more opening books
 
