@@ -17,9 +17,9 @@ Plans for future improvements:
 
     a. DONE: Create playing tool with custom time controls
 
-    b. DONE*: Create board editor tool
+    b. DONE**: Create board editor tool
 
-    c. DONE*: Create analysis board tool
+    c. DONE**: Create analysis board tool
 
 2. DONE: Modify programming language to allow faster processing
 
@@ -33,4 +33,4 @@ Plans for future improvements:
 
 7. DONE: Program concept of time controls and adaptability to less time
 
-* These two features are functional, but not accessible from the user interface
+** These two features are functional, but not accessible from the user interface
