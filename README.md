@@ -33,4 +33,4 @@ Plans for future improvements:
 
 7. DONE: Program concept of time controls and adaptability to less time
 
-*: These two features are functional, but not accessible from the user interface
+* These two features are functional, but not accessible from the user interface
