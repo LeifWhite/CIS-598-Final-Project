@@ -1,6 +1,7 @@
 #!python
 #cython: language_level=3
 # Controls how the program thinks and plays
+
 import chess
 import chess.polyglot
 import copy
@@ -14,7 +15,7 @@ import datetime
 # I realize the latter is slightly outdated, but I am a big Alan Turing fan and wanted to use some of his ideas
 class brain:
     # Initializes constant variables for brain class to assess positional strength
-    def __init__(self, board):
+    def __init__(self, board, tb):
         self.time = 0
         self.generateKingExposureTime = 0
         self.getTotalMaterialTime = 0
@@ -30,7 +31,7 @@ class brain:
         self.endTime = 0
         self.endSplit1 = 0
         self.innerInnerLoopTime=0
-
+        self.tb = tb
         self.t_bonus=0
 
         self.board = copy.deepcopy(board)
@@ -39,13 +40,15 @@ class brain:
         self.out_of_book = False
         self.in_tablebase = False
         self.current_depth = 0
-        self.tb = chess.syzygy.open_tablebase("./OmegaFifteen/3-4-5piecesSyzygy/3-4-5")
+
         # Search Parameters
         self.MIN_DEPTH_SEARCH = 1
         self.MAX_DEPTH_SEARCH = 6
         self.MAX_INITIAL_SEARCH = 4
         self.ATTACKS_HIGHER_PIECE_PLIES = 1
+        self.working_attacks_higher_piece_plies = self.ATTACKS_HIGHER_PIECE_PLIES
         self.CHECK_PLIES = 3
+        self.working_check_plies = self.CHECK_PLIES
         # Evaluation Factors
         self.PIECE_VALUE_MULTIPLIER = 5
         self.TEMPO_BONUS = 0.35
@@ -195,15 +198,13 @@ class brain:
         m = 1
         if self.board.turn == chess.BLACK:
             m = -1
-        print(m*val)
+        print((m*val)/self.PIECE_VALUE_MULTIPLIER)
         print(best)
         print("ITERATIONS: " + str(self.qvaluations))
-        if self.qvaluations>0:
-            print("AVERAGE T BONUS: "+str(self.t_bonus/self.qvaluations))
         print("\n")
-        self.tb.close()
+
         end = datetime.datetime.now()
-        print("Generate King Exposure Time: "+str(self.generateKingExposureTime))
+        """print("Generate King Exposure Time: "+str(self.generateKingExposureTime))
         print("Get Total Material Time: "+str(self.getTotalMaterialTime))
         print("Is Blocked Time: "+str(self.isBlockedTime))
         print("Is Passed Time: "+str(self.isPassedTime))
@@ -217,13 +218,12 @@ class brain:
         print("     Pawn Eval Time: "+str(self.pawnEvalTime))
         print("     End Time 1: "+str(self.endSplit1))
         print("     End Time 2: "+str(self.endTime))
-        print("Total Time: "+str(end-start))
+        print("Total Time: "+str(end-start))"""
         return best
-    # TODO: Establish a percentage of search complete of move
     # First level of search
     def selectMove(self):
         # Tries checking tablebase and book first
-        #choice = chess.polyglot.MemoryMappedReader("./OmegaFifteen/ProDeo292/books/ProDeo.bin").weighted_choice(self.board)
+        #choice = chess.polyglot.MemoryMappedReader("./Gecko_Bot/ProDeo292/books/ProDeo.bin").weighted_choice(self.board)
         try:
             #raise ValueError()
             piece_count = chess.popcount(self.board.occupied_co[0]) + chess.popcount(self.board.occupied_co[1])
@@ -231,7 +231,7 @@ class brain:
                 return self.endgameTablebase()
 
             choice = chess.polyglot.MemoryMappedReader(
-                "./OmegaFifteen/ProDeo292/books/ProDeo.bin"
+                "./Gecko_Bot/ProDeo292/books/ProDeo.bin"
                 ).weighted_choice(
                 self.board)
             weight = choice.weight
@@ -246,12 +246,25 @@ class brain:
             alpha = -100000
             beta = 100000
             # estimates how long it will take to make this move
-            depth_can_go_guess = self.estimateTime()
+            et = self.estimateTime()
+            depth_can_go_guess = et[0]
+            if depth_can_go_guess == 1 and et[1]>self.time:
+                self.working_check_plies -= 1
+                if et[1]>self.time*1.5:
+                    self.working_attacks_higher_piece_plies -= 1
+                    if et[1]>self.time*2.5:
+                        self.working_check_plies -= 1
+                print("Allocated "+str(self.time)+" time.\n"+
+                      "Working check plies is now "+str(self.working_check_plies)+"/"+str(self.CHECK_PLIES)+
+                      "\nAttacks higher piece plies is now "+str(self.working_attacks_higher_piece_plies)+"/"+str(self.ATTACKS_HIGHER_PIECE_PLIES))
+
             max_go_to = min(depth_can_go_guess+2, self.MAX_DEPTH_SEARCH)
             # used to calculate how long it thinks on each ply
             self.i.append(0)
             up_cool_down = 0
             l_move_count = self.board.legal_moves.count()
+            moves_left = l_move_count
+            time_left = self.time
             copy_board = self.board.copy()
             can_increase_depth = True
             # iterates through all legal moves
@@ -263,11 +276,32 @@ class brain:
                 self.board.push(i)
 
                 try:
+                    starting_q = self.qvaluations
                     self.current_depth += 1
                     # uses minimax algorithm using negamax implementation
-                    value = -self.minimax(max(depth_can_go_guess, self.MIN_DEPTH_SEARCH), alpha=-beta, beta=-alpha,
+                    save_wc = self.working_check_plies
+                    save_ahp = self.working_attacks_higher_piece_plies
+                    value = -self.minimax(max(depth_can_go_guess, self.MIN_DEPTH_SEARCH), time_left/moves_left, alpha=-beta, beta=-alpha,
                                           depth=1)
+                    self.working_check_plies = save_wc
+                    self.working_attacks_higher_piece_plies = save_ahp
                     self.current_depth -= 1
+                    moves_left -= 1
+                    time_left = time_left - (self.qvaluations - starting_q)
+                    if time_left < 0:
+                        time_left = self.time/3
+                        if depth_can_go_guess >=2:
+                            depth_can_go_guess-=1
+                            print("Down to " + str(depth_can_go_guess) + " ply search!")
+                        elif self.working_check_plies >= 3:
+                            self.working_check_plies -= 1
+                            print("reducing check search")
+                        elif self.working_attacks_higher_piece_plies >= 1:
+                            self.working_attacks_higher_piece_plies -= 1
+                            print("reducing attacks higher piece search")
+                        elif self.working_check_plies >= 1:
+                            self.working_check_plies -= 1
+                            print("reducing check search")
                 # If it is thinking too long, reset the board and calculate with minimum search
                 except MemoryError:
                     print("ERROR")
@@ -282,7 +316,7 @@ class brain:
                         d -= 1
                     depth_can_go_guess = self.MIN_DEPTH_SEARCH
                     self.current_depth = 1
-                    value = -self.minimax(d, alpha=-beta, beta=-alpha, depth=1)
+                    value = -self.minimax(d, time=0, alpha=-beta, beta=-alpha, depth=1)
                     self.current_depth -= 1
                 self.board.pop()
                 #print("This move: "+i.uci()+" is worth: "+str(value))
@@ -303,6 +337,7 @@ class brain:
                     print("Up to " + str(depth_can_go_guess) + " ply search!")
                 # Determines best move and score
                 if value > best_value or best_move == chess.Move.null():
+                    #print("New best move at depth 0: " + str(i))
                     best_value = value
                     best_move = i
                 # Alpha beta pruning
@@ -312,9 +347,12 @@ class brain:
             return best_value, best_move
     # Minimax algorithm with alpha-beta pruning and negamax implementation
     # Second level of search
-    def minimax(self, max_depth, alpha, beta, depth=0):
+    def minimax(self, max_depth, time, alpha, beta, depth=0):
+
 
         piece_count = chess.popcount(self.board.occupied_co[0]) + chess.popcount(self.board.occupied_co[1])
+
+
         if piece_count <= 5:
             score = self.staticEvaluation(self.board)
             self.in_tablebase = False
@@ -322,19 +360,29 @@ class brain:
         best_score = -9999
         # If max depth exceeded, keep looking, but only at checks and captures
         if depth >= max_depth-1:
-            return self.attacksHigherPieceSearch(alpha, beta)
-        if len(self.i) == depth:
-            self.i.append(0)
+            #return self.quiesce(alpha, beta)
+            return self.attacksHigherPieceSearch(alpha, beta, time=time)
+        #if len(self.i) == depth:
+            #self.i.append(0)
         has_moves = False
         # This is important to check if the game could be over here,
         # so that it doesn't just return the game ends founds in the quiesce function
         if self.checkDrawClaimable(self.board) or self.board.is_game_over():
             return self.staticEvaluation(self.board)
+        l_move_count = self.board.legal_moves.count()
+        moves_left = l_move_count
+        time_left = time
+        #print(self.qvaluations)
+        md = max_depth
+        checked_moves = []
+
         # Iterates through legal moves
         for i in self.board.legal_moves:
 
-            self.i[depth] += 1
-
+            #print("Check move "+str(i))
+            checked_moves.append(i)
+            #self.i[depth] += 1
+            starting_q = self.qvaluations
             if not has_moves:
                 has_moves = True
             # Same thing as before, pushes move, recursively scans, uses negamax
@@ -342,22 +390,55 @@ class brain:
             # for me is bad for my opponent and vise versa
             self.board.push(i)
             self.current_depth += 1
-            score = -self.minimax(max_depth, alpha=-beta, beta=-alpha, depth=depth + 1)
+            save_wc = self.working_check_plies
+            save_ahp = self.working_attacks_higher_piece_plies
+            score = -self.minimax(md, time_left/moves_left, alpha=-beta, beta=-alpha, depth=depth + 1)
+            self.working_check_plies = save_wc
+            self.working_attacks_higher_piece_plies = save_ahp
             self.current_depth -= 1
             self.board.pop()
-
+            moves_left -= 1
             # Alpha-beta pruning
             if score >= beta:
                 return beta
             if score > best_score:
+                #print("New best move at depth "+str(depth)+ ": "+ str(i))
                 best_score = score
                 if score > alpha:
                     alpha = score
+            time_left = time_left-(self.qvaluations - starting_q)
+
+            if time_left < 0:
+
+                time_left = self.time / 3
+                if md >= 2:
+                    md -= 1
+                    #print("Down to " + str(md) + " ply search!")
+                elif self.working_check_plies >= 3:
+                    self.working_check_plies -= 1
+                    #print("reducing check search")
+                elif self.working_attacks_higher_piece_plies >= 1:
+                    self.working_attacks_higher_piece_plies -= 1
+                    #print("reducing attacks higher piece search")
+                elif self.working_check_plies >= 1:
+                    self.working_check_plies -= 1
+                    #print("reducing check search")
+            if moves_left == 0:
+                break
+            if(self.qvaluations - starting_q) > (time_left/moves_left)*1.2 and md > self.MIN_DEPTH_SEARCH:
+                if md >= depth+2:
+                    md -= 1
+                    #print("In min, down to "+str(md) + " ply!")
+            elif (self.qvaluations - starting_q)*1.6 < time_left/moves_left and md < self.MAX_DEPTH_SEARCH:
+                md += 1
+                #print("In min, up to " + str(md) + " ply!")
+
         # I don't think this is necessary... just too scared to remove it.
         if not has_moves:
             return self.staticEvaluation(self.board)
         return alpha
-    def attacksHigherPieceSearch(self, alpha, beta, qdepth=0):
+    # Third level of search, checks moves that attack higher value pieces
+    def attacksHigherPieceSearch(self, alpha, beta, time, qdepth=0):
         piece_count = chess.popcount(self.board.occupied_co[0]) + chess.popcount(self.board.occupied_co[1])
         if piece_count <= 5:
             score = self.staticEvaluation(self.board)
@@ -365,14 +446,16 @@ class brain:
             return score
         best_score = -9999
         # If max depth exceeded, keep looking, but only at checks and captures
-        if qdepth >= self.ATTACKS_HIGHER_PIECE_PLIES:
-            return self.checkSearch(alpha, beta)
+        if qdepth >= self.working_attacks_higher_piece_plies:
+            return self.checkSearch(alpha, beta, time)
         has_moves = False
         # This is important to check if the game could be over here,
         # so that it doesn't just return the game ends founds in the quiesce function
         if self.checkDrawClaimable(self.board) or self.board.is_game_over():
             return self.staticEvaluation(self.board)
         is_check = self.board.is_check()
+        time_left = time
+        l_move_count = self.board.legal_moves.count()
         # Iterates through legal moves
         for i in self.board.legal_moves:
 
@@ -381,16 +464,17 @@ class brain:
             # Same thing as before, pushes move, recursively scans, uses negamax
             # Negamax implementation pretty much uses alpha-beta operating under the principle that what is good
             # for me is bad for my opponent and vise versa
+            starting_q = self.qvaluations
             self.current_depth += 1
             if self.attacksHigherPiece(i):
                 self.board.push(i)
-                score = -self.attacksHigherPieceSearch(alpha=-beta, beta=-alpha, qdepth=qdepth + 1)
+                score = -self.attacksHigherPieceSearch(alpha=-beta, beta=-alpha, time=time_left/(l_move_count/4), qdepth=qdepth + 1)
             elif not is_check and not self.board.gives_check(i):
                 self.board.push(i)
                 score = -self.quiesce(alpha=-beta, beta=-alpha, qdepth=qdepth + 1)
             else:
                 self.board.push(i)
-                score = -self.checkSearch(alpha=-beta, beta=-alpha, qdepth=qdepth + 1)
+                score = -self.checkSearch(alpha=-beta, beta=-alpha, time=time_left/(l_move_count/4), qdepth=qdepth + 1)
             self.board.pop()
             self.current_depth -= 1
             # Alpha-beta pruning
@@ -400,11 +484,27 @@ class brain:
                 best_score = score
                 if score > alpha:
                     alpha = score
+            time_left = time_left - (self.qvaluations - starting_q)
+
+            if time_left < 0:
+
+                time_left = self.time / 3
+
+                if self.working_check_plies >= 3:
+                    self.working_check_plies -= 1
+                    #print("reducing check search")
+                elif self.working_attacks_higher_piece_plies >= 1:
+                    self.working_attacks_higher_piece_plies -= 1
+                    #print("reducing attacks higher piece search")
+                elif self.working_check_plies >= 1:
+                    self.working_check_plies -= 1
+                    #print("reducing check search")
         # I don't think this is necessary... just too scared to remove it.
         if not has_moves:
             return self.staticEvaluation(self.board)
         return alpha
-    def checkSearch(self, alpha, beta, qdepth=0):
+    # Fourth level of search, checks moves that attack the king or escape said attack
+    def checkSearch(self, alpha, beta, time, qdepth=0):
         piece_count = chess.popcount(self.board.occupied_co[0]) + chess.popcount(self.board.occupied_co[1])
         if piece_count <= 5:
             score = self.staticEvaluation(self.board)
@@ -412,7 +512,7 @@ class brain:
             return score
         best_score = -9999
         # If max depth exceeded, keep looking, but only at checks and captures
-        if qdepth >= self.CHECK_PLIES:
+        if qdepth >= self.working_check_plies:
             return self.quiesce(alpha, beta)
         has_moves = False
         # This is important to check if the game could be over here,
@@ -420,6 +520,8 @@ class brain:
         if self.checkDrawClaimable(self.board) or self.board.is_game_over():
             return self.staticEvaluation(self.board)
         is_check = self.board.is_check()
+        time_left = time
+        l_move_count = self.board.legal_moves.count()
         # Iterates through legal moves
         for i in self.board.legal_moves:
 
@@ -428,13 +530,14 @@ class brain:
             # Same thing as before, pushes move, recursively scans, uses negamax
             # Negamax implementation pretty much uses alpha-beta operating under the principle that what is good
             # for me is bad for my opponent and vise versa
+            starting_q = self.qvaluations
             self.current_depth += 1
             if not is_check and not self.board.gives_check(i):
                 self.board.push(i)
                 score = -self.quiesce(alpha=-beta, beta=-alpha, qdepth=qdepth + 1)
             else:
                 self.board.push(i)
-                score = -self.checkSearch(alpha=-beta, beta=-alpha, qdepth=qdepth + 1)
+                score = -self.checkSearch(alpha=-beta, beta=-alpha,  time=time_left/(l_move_count/4), qdepth=qdepth + 1)
             self.board.pop()
             self.current_depth -= 1
             # Alpha-beta pruning
@@ -444,11 +547,20 @@ class brain:
                 best_score = score
                 if score > alpha:
                     alpha = score
+            alpha = score
+            time_left = time_left - (self.qvaluations - starting_q)
+
+            if time_left < 0:
+
+                time_left = self.time / 3
+                if self.working_check_plies >= 1:
+                    self.working_check_plies -= 1
+                    #print("reducing check search")
         # I don't think this is necessary... just too scared to remove it.
         if not has_moves:
             return self.staticEvaluation(self.board)
         return alpha
-    # Third level of search, evaluates captures and some checks
+    # Fifth level of search, evaluates captures
     def quiesce(self, alpha, beta, qdepth=0, checked=False):
         #if self.checkDrawClaimable(self.board) or self.board.is_game_over():
         #  return self.staticEvaluation(self.board)
@@ -462,9 +574,9 @@ class brain:
         # Increases the amount of positions evaluated
         self.qvaluations += 1
         # If too many positions are evaluated, something is wrong.  You gotta restart
-        if self.qvaluations > 15 * self.time:
+        """if self.qvaluations > 15 * self.time:
             print("Move officially wasted.")
-            raise MemoryError("Maximum positions evaluated.  Must redo search at lowest value.")
+            raise MemoryError("Maximum positions evaluated.  Must redo search at lowest value.")"""
         # Alpha-beta pruning, no point in evaluating if what you already have is better than what you possibly can get
         if stand_pat >= beta:  # and not self.board.is_check():
             return beta
@@ -478,14 +590,15 @@ class brain:
             alpha = stand_pat
         # Looks at all legal moves
         for i in self.board.legal_moves:
+
             capture = self.board.is_capture(i)
             #gives_check = self.board.gives_check(i)
-            # JK, just captures and some checks.  Not too many checks though
+            # JK, just captures and promotions
             if capture or i.promotion is not None:
 
                 # Only looks at move with a positive static exchange evaluation
                 if capture:
-                    if self.see(self.board, i.to_square, self.board.turn) < 0:
+                    if self.newSee(i):#self.see(self.board, i.to_square, self.board.turn) < 0:
                         continue
 
                 # We need to go deeper! (Using negamax, still)
@@ -500,7 +613,7 @@ class brain:
                 if score > alpha:
                     alpha = score
         return alpha
-    # Static exchange evaluation
+    # Static exchange evaluation NO LONGER USED
     def see(self, node, square, side):
 
         value = 0
@@ -509,16 +622,31 @@ class brain:
         piece = self.getSmallestAttacker(node, square, side)
         if piece is not None:
             try_move = chess.Move(piece, square)
+
             if not node.is_en_passant(try_move):
                 piece_just_captured = self.PIECE_VALUES[node.piece_type_at(square)]
             else:
                 piece_just_captured = self.PIECE_VALUES[chess.PAWN]
 
             node.push(try_move)
-            value = piece_just_captured - self.see(node, square, not side)
+            value = max(0, piece_just_captured - self.see(node, square, not side))
             node.pop()
 
         return value
+    # Static exchange evaluation, but faster
+    def newSee(self, move):
+        # En passant's to square would be none
+        if self.board.is_en_passant(move):
+            target_type = chess.PAWN
+        else:
+            target_type = self.board.piece_type_at(move.to_square)
+        attacker_type = self.board.piece_type_at(move.from_square)
+        """print("\n")
+        print(self.board)
+        print(move)
+        print(target_type)
+        print(attacker_type)"""
+        return self.PIECE_VALUES[target_type] < self.PIECE_VALUES[attacker_type] and self.board.attackers(not self.board.turn, move.to_square)
     # Determines the smallest attacker on a given square
     def getSmallestAttacker(self, node, square, side):
         min_a = 100
@@ -532,7 +660,6 @@ class brain:
 
         return min_i
     # Estimates how long the computer thinks a move will take to accurately allocate plies
-    # TODO factor checks into estimation
     def estimateTime(self):
         # Pseudo legal required for estimate so that checks don't skew results
         i1 = self.board.pseudo_legal_moves.count()
@@ -587,7 +714,7 @@ class brain:
         return_val = max(return_val, self.MIN_DEPTH_SEARCH)
         print("Counter estimates " + str(sum_used) + " in " + str(counter)
               + " iterations.  Will conduct " + str(return_val) + " ply search.")
-        return return_val
+        return return_val, counter
     # Sums up move possibilities to produce estimate
     def counterEvaluate(self, i1, i2, m1, m2):
         sum_used = 0
@@ -619,8 +746,6 @@ class brain:
                         return True
         self.board.pop()
         return False
-    # TODO: threatening checkmate good, instill it with the box (less material equals higher pawn advancement benefit)
-    #  Unstoppable passed pawn
     # Evaluation function, assesses positional strength based on one position without calculating any further
     def positionEvaluation(self, t_board):
         start = datetime.datetime.now()
@@ -632,8 +757,9 @@ class brain:
             else:
                 return 9999-self.current_depth
         # Draws are neutral
+
         if t_board.can_claim_fifty_moves() \
-                or t_board.is_repetition(3) \
+                or t_board.is_repetition(2) \
                 or t_board.is_stalemate() \
                 or t_board.is_insufficient_material():
             return 0
@@ -1074,7 +1200,7 @@ class brain:
         return evaluation
     # Determines if the position is a draw
     def checkDrawClaimable(self, t_board):
-        if t_board.can_claim_fifty_moves() or t_board.is_repetition(3):
+        if t_board.can_claim_fifty_moves() or t_board.is_repetition(2):
             return True
     # Converts the position evaluation to be an evaluation for one side
     def staticEvaluation(self, t_board):
@@ -1224,7 +1350,6 @@ class brain:
     # WDL = -1 means that the endgame is a loss for the moving side, but it is prevented by the 50 move rule.
     # WDL = -2 means that the endgame is a loss for the moving side within the 50 move rule.
     # DTZ means "Distance to Zeroing" is a term determining the fewest moves before a checkmate, capture, or pawn move
-    # TODO: Make the program strive to win better, but drawn positions
     def endgameTablebase(self):
 
         dtz = None
@@ -1299,3 +1424,5 @@ class brain:
         start_wdl = self.tb.probe_wdl(self.board)
 
         return start_wdl
+
+
