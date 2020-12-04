@@ -13,13 +13,13 @@ Total work: 144 hours
 Plans for future improvements:
 
 
-1. Create user interface
+1. DONE: Create user interface
 
-    a. Create playing tool with custom time controls
+    a. DONE: Create playing tool with custom time controls
 
-    b. Create board editor tool
+    b. DONE*: Create board editor tool
 
-    c. Create analysis board tool
+    c. DONE*: Create analysis board tool
 
 2. DONE: Modify programming language to allow faster processing
 
@@ -32,3 +32,5 @@ Plans for future improvements:
 6. DONE EQUIVALENT: Give notion of move percentage completion. EQUIVALENT: Allocated subtime to moves in deeper plies.  
 
 7. DONE: Program concept of time controls and adaptability to less time
+
+*: These two features are functional, but not accessible from the user interface
